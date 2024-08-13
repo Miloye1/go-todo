@@ -56,7 +56,6 @@ func showTodos() {
 	header, parsedRecords, err := readDatabase()
 
 	if err != nil {
-		fmt.Printf("Error while reading the database, %v", err)
 		return
 	}
 
@@ -72,37 +71,46 @@ func addNewTodoToDatabase() {
 	task, scanErr := scanUserInput()
 
 	if scanErr != nil {
-		fmt.Printf("Error while reading user input, %v", scanErr)
 		return
-	}
-
-	_, parsedRecords, err := readDatabase()
-
-	if err != nil {
-		fmt.Printf("Error while reading the database, %v", err)
-		return
-	}
-
-	var maxId int = -1 << 63
-
-	for _, record := range parsedRecords {
-		if record.id > maxId {
-			maxId = record.id
-		}
 	}
 
 	record := Record{
-		id:   maxId + 1,
+		id:   1,
 		task: task,
 		done: false,
 	}
 
-	writeError := writeToDatabase(record)
+	_, parsedRecords, err := readDatabase()
 
-	if writeError != nil {
-		fmt.Printf("Error while saving new todo, %v", writeError)
+	if os.IsNotExist(err) {
+		fmt.Println("Creating new database...")
+
+		header := []string{"Id", "Todo", "Done"}
+
+		if err := writeToDatabase(header); err != nil {
+			return
+		}
 	}
 
+	if len(parsedRecords) > 0 {
+		var maxId int = -1 << 63
+
+		for _, record := range parsedRecords {
+			if record.id > maxId {
+				maxId = record.id
+			}
+		}
+
+		record.id = maxId + 1
+	}
+
+	recordList := record.toString()
+
+	if err := writeToDatabase(recordList); err != nil {
+		return
+	}
+
+	fmt.Println("Added new todo to the database")
 }
 
 func readDatabase() ([]string, []Record, error) {
@@ -112,6 +120,15 @@ func readDatabase() ([]string, []Record, error) {
 		fmt.Println("Todo database doesn't exist")
 		return nil, nil, err
 	}
+
+	defer func() {
+		err := file.Close()
+
+		if err != nil {
+			fmt.Printf("Error while closing the file, %v\n", err)
+			return
+		}
+	}()
 
 	reader := csv.NewReader(file)
 	records, readerErr := reader.ReadAll()
@@ -129,26 +146,25 @@ func readDatabase() ([]string, []Record, error) {
 		return nil, nil, parseErr
 	}
 
-	closeErr := file.Close()
-
-	if closeErr != nil {
-		fmt.Printf("Error while closing the file, %v\n", closeErr)
-		return nil, nil, closeErr
-	}
-
 	return header, parsedRecords, nil
-
 }
 
-func writeToDatabase(record Record) error {
-	recordList := record.toString()
-
-	file, err := os.OpenFile("./.data/db.csv", os.O_RDWR|os.O_APPEND, os.ModeAppend)
+func writeToDatabase(recordList []string) error {
+	file, err := os.OpenFile("./.data/db.csv", os.O_RDWR|os.O_APPEND|os.O_CREATE, 0666)
 
 	if err != nil {
 		fmt.Println("Todo database doesn't exist")
 		return err
 	}
+
+	defer func() {
+		err := file.Close()
+
+		if err != nil {
+			fmt.Printf("Error while closing the file, %v\n", err)
+			return
+		}
+	}()
 
 	writer := csv.NewWriter(file)
 
@@ -160,13 +176,6 @@ func writeToDatabase(record Record) error {
 	if writeErr != nil {
 		fmt.Printf("Error while writing to the file, %v\n", writeErr)
 		return writeErr
-	}
-
-	closeErr := file.Close()
-
-	if closeErr != nil {
-		fmt.Printf("Error while closing the file, %v\n", closeErr)
-		return closeErr
 	}
 
 	return nil
